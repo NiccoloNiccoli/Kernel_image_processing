@@ -9,13 +9,17 @@
 #include<opencv2/imgproc/imgproc.hpp>
 #include "sequentialOMP.cpp"
 #include "parallelOMP.cpp"
+#include "separableSequentialOMP.cpp"
+#include "separableParallelOMP.cpp"
 #include <chrono>
 
 int main() {
-    int numProcs = 8;
+    int numProcs = 4;
     cv::Mat src = cv::imread("../images/cat01.jpg", cv::IMREAD_COLOR);
     cv::Mat dst_seq = cv::Mat::zeros(cv::Size(src.cols, src.rows), CV_8UC3);
     cv::Mat dst_par = cv::Mat::zeros(cv::Size(src.cols, src.rows), CV_8UC3);
+    cv::Mat dst_sepSeq = cv::Mat::zeros(cv::Size(src.cols, src.rows), CV_8UC3);
+    cv::Mat dst_sepPar = cv::Mat::zeros(cv::Size(src.cols, src.rows), CV_8UC3);
     /* std::vector<double> filter {1, 2, 1,
                                  2, 4, 2,
                                  1, 2, 1};
@@ -33,10 +37,16 @@ int main() {
         */
 
     std::vector<double> filter {1,0,-1,1,0,-1,1,0,-1};
+    std::vector<double> filter_col {1,1,1};
+    std::vector<double> filter_row {1,0,-1};
     applyFilter_seq(numProcs, &src, &dst_seq, filter);
     applyFilter_parOMP(numProcs, &src, &dst_par, filter);
+    applyFilter_sepSeq(numProcs, &src, &dst_sepSeq, filter_col, filter_row);
+    applyFilter_sepPar(numProcs, &src, &dst_sepPar, filter_col, filter_row);
     cv::imshow("el gatito seq", dst_seq);
     cv::imshow("el gatito par", dst_par);
+    cv::imshow("el gatito sepSeq", dst_sepSeq);
+    cv::imshow("el gatito sepPar", dst_sepPar);
     /*cv::Mat dst2;
     cv::Mat kernel(3,3, CV_32F);
     float sum = 16.0f;
