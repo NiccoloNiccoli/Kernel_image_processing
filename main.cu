@@ -5,64 +5,49 @@
 #include <opencv2/cudaarithm.hpp>
 #include "chrono"
 
-#define TILE_WIDTH 16
-#define MASK_WIDTH 3
+#define TILE_WIDTH 2
+#define MASK_WIDTH 31
 #define MASK_HEIGHT MASK_WIDTH
 #define BLOCK_WIDTH (TILE_WIDTH + MASK_WIDTH - 1)
-__global__ void conv(uchar* src, int srcWidth, int srcHeight, int srcChannels, double* convKernel, int kernelWidth, int kernelHeight, uchar* dst = nullptr){
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    double convValue = 0.0;
-    if(index < kernelWidth * kernelHeight)
-        printf("%f", convKernel[index]);
-    int startingCol = -(kernelWidth - 1) / 2;
-    int startingRow = -(kernelHeight - 1) / 2;
-    for(int j = 0; j < kernelHeight; j++){
-        for(int i = 0; i < kernelWidth; i++){
-            convValue += src[index + ((j + startingRow) * kernelWidth + (i + startingRow)) * srcChannels] * convKernel[j*kernelWidth + i];
-        }
-    }
+__global__ void hello(const uchar* __restrict__ src, uchar* dst, int srcWidth, const float* __restrict__ kernel) {
 
-    dst[index] = static_cast<uchar>(convValue);
+    __shared__ uchar Ns[BLOCK_WIDTH * TILE_WIDTH];
 
-}
-/*__global__ void convolution(const uchar* __restrict__ src, int srcWidth, int srcHeight, int srcChannels,const float* __restrict__ convKernel, int kernelWidth, int kernelHeight, uchar* dst){
-
-    __shared__ uchar Ns[BLOCK_WIDTH][BLOCK_WIDTH];
-   // printf("%d", srcChannels);
-    int mask_radius_w = kernelWidth/2;
-    int mask_radius_h = kernelHeight/2;
     int tx = threadIdx.x;
     int ty = threadIdx.y;
     int row_o = blockIdx.y * TILE_WIDTH + ty;
     int col_o = blockIdx.x * TILE_WIDTH + tx;
-    int row_i = row_o - mask_radius_h;
-    int col_i = col_o - mask_radius_w;
-
-    if((row_i >= 0) && (row_i < srcHeight) && (col_i >= 0) && (col_i < srcWidth)){
-        Ns[ty][tx] = src[row_i * srcWidth + col_i];
+    int j = 0;
+    int col_i = col_i - MASK_WIDTH/2;
+    int row_i = row_o;
+    float sum = 0.f;
+    if((col_i >= 0) && (col_i < srcWidth)){
+        Ns[tx + ty * BLOCK_WIDTH] = src[(row_i * srcWidth + col_i) * 3 + blockIdx.z];
     }else{
-        Ns[ty][tx]=0.0f;
+        Ns[tx + ty * BLOCK_WIDTH]=0.0f;
     }
-    __syncthreads();
-    float output = 0.0f;
-    if(ty < TILE_WIDTH && tx < TILE_WIDTH){
-       // printf("Con %d siamo dentro...\n", threadIdx.x);
-        for(int i = 0; i < kernelHeight; i++){
-            for(int j = 0; j < kernelWidth; j++){
-               // printf("dentro, %f\n", (float)Ns[i+ty][j+tx]);
-                //printf("%f %d", convKernel[i * kernelWidth +j], Ns[i+ty][j+tx]);
-                output += convKernel[i * kernelWidth + j] * (float)Ns[i+ty][j+tx]; //fixme 11-02 kernelWidth e MASK_WIDTH sono la stessa cosa
-                //printf("%f", output);
-            }
+    if (col_o >= MASK_WIDTH / 2 && col_o < srcWidth - MASK_WIDTH / 2) {
+        for (int i = -MASK_WIDTH / 2; i <= MASK_WIDTH / 2; i++) {
+            sum += src[(row_o * srcWidth + (col_o + i)) * 3 + blockIdx.z] * kernel[MASK_WIDTH/2 + i];
         }
-        //printf("Con %d siamo fuori...\n", threadIdx.x);
+        dst[(row_o * srcWidth + col_o) * 3 + blockIdx.z] = sum;
+    }
+}
+__global__ void world(const uchar* __restrict__ src, uchar* dst, int srcHeight, const float* __restrict__ kernel, int srcWidth){
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int row_o = blockIdx.y * TILE_WIDTH + ty;
+    int col_o = blockIdx.x * TILE_WIDTH + tx;
 
-        if(row_o < srcHeight && col_o < srcWidth){
-            //printf("%d sta aggiornando dst...\n", threadIdx.x);
-            dst[row_o * srcWidth + col_o] = static_cast<uchar>(output);
+    float sum = 0.f;
+    if (row_o >= MASK_WIDTH / 2 && row_o < srcHeight - MASK_WIDTH / 2) {
+        for (int i = -MASK_WIDTH / 2; i <= MASK_WIDTH / 2; i++) {
+            sum += src[((row_o+i) * srcWidth+ col_o) * 3 + blockIdx.z] * kernel[MASK_WIDTH/2 + i];
         }
+        dst[(row_o * srcWidth + col_o) * 3 + blockIdx.z] = sum;
     }
-}*/
+
+}
 __global__ void convolution(const uchar* __restrict__ src, int srcWidth, int srcHeight, int srcChannels,const float* __restrict__ convKernel, int kernelWidth, int kernelHeight, uchar* dst){
 
     __shared__ uchar Ns[BLOCK_WIDTH][BLOCK_WIDTH];
@@ -100,41 +85,41 @@ __global__ void convolution(const uchar* __restrict__ src, int srcWidth, int src
             dst[(row_o * srcWidth + col_o) * srcChannels + blockIdx.z] = static_cast<uchar>(output);
         }
     }
+    __syncthreads();
 }
 
 __global__ void sepRowConvolution(const uchar* __restrict__ src, int srcWidth, int srcHeight, int srcChannels,const float* __restrict__ convKernel_row, int kernelWidth, uchar* dst){
 
-    __shared__ uchar Ns[TILE_WIDTH][BLOCK_WIDTH];
-    // printf("%d", srcChannels);
-    int mask_radius_w = kernelWidth/2;
+    __shared__ uchar Ns[BLOCK_WIDTH * BLOCK_WIDTH];
+    //printf("%d + ", srcChannels);
     int tx = threadIdx.x;
     int ty = threadIdx.y;
     int row_o = blockIdx.y * TILE_WIDTH + ty;
     int col_o = blockIdx.x * TILE_WIDTH + tx;
     int row_i = row_o;
-    int col_i = col_o - mask_radius_w;
+    int col_i = col_o - MASK_WIDTH/2;
 
     if((col_i >= 0) && (col_i < srcWidth)){
-        Ns[tx][ty] = src[(row_i * srcWidth + col_i) * srcChannels + blockIdx.z];
+        Ns[tx + ty * BLOCK_WIDTH] = src[(row_i * srcWidth + col_i) * srcChannels + blockIdx.z];
     }else{
-        Ns[tx][ty]=0.0f;
+        Ns[tx + ty * BLOCK_WIDTH]=0.0f;
     }
+    //printf("XxX ");
     __syncthreads();
     float output = 0.0f;
     if(ty < TILE_WIDTH && tx < TILE_WIDTH){
             for(int j = 0; j < kernelWidth; j++){
-                output += convKernel_row[j] * (float)Ns[j+tx][ty]; //fixme 11-02 kernelWidth e MASK_WIDTH sono la stessa cosa
+                output += convKernel_row[j] * (float)Ns[j + tx + ty * BLOCK_WIDTH]; //fixme 11-02 kernelWidth e MASK_WIDTH sono la stessa cosa
             }
 
         if(row_o < srcHeight && col_o < srcWidth){
-            //printf("%d sta aggiornando dst...\n", threadIdx.x);
             dst[(row_o * srcWidth + col_o) * srcChannels + blockIdx.z] = static_cast<uchar>(output);
         }
     }
 }
 __global__ void sepColConvolution(const uchar* __restrict__ src, int srcWidth, int srcHeight, int srcChannels,const float* __restrict__ convKernel_col, int kernelHeight, uchar* dst){
 
-    __shared__ uchar Ns[TILE_WIDTH][BLOCK_WIDTH];
+    __shared__ uchar Ns[BLOCK_WIDTH * BLOCK_WIDTH];
     // printf("%d", srcChannels);
     int mask_radius_h = kernelHeight/2;
     int tx = threadIdx.x;
@@ -145,53 +130,24 @@ __global__ void sepColConvolution(const uchar* __restrict__ src, int srcWidth, i
     int col_i = col_o;
 
     if((row_i >= 0) && (row_i < srcHeight)){
-        Ns[tx][ty] = src[(row_i * srcWidth + col_i) * srcChannels + blockIdx.z];
+        Ns[tx + ty * BLOCK_WIDTH] = src[(row_i * srcWidth + col_i) * srcChannels + blockIdx.z];
     }else{
-        Ns[tx][ty]=0.0f;
+        Ns[tx + ty * BLOCK_WIDTH]=0.0f;
     }
     __syncthreads();
     float output = 0.0f;
     if(ty < TILE_WIDTH && tx < TILE_WIDTH){
         for(int i = 0; i < kernelHeight; i++){
-                output += convKernel_col[i] * (float)Ns[tx][i+ty]; //fixme 11-02 kernelWidth e MASK_WIDTH sono la stessa cosa
+                output += convKernel_col[i] * (float)Ns[tx + (ty+i) * BLOCK_WIDTH]; //fixme 11-02 kernelWidth e MASK_WIDTH sono la stessa cosa
         }
 
         if(row_o < srcHeight && col_o < srcWidth){
             dst[(row_o * srcWidth + col_o) * srcChannels + blockIdx.z] = static_cast<uchar>(output);
         }
     }
+    __syncthreads();
 }
 
-__global__ void sepColConvolution2(const uchar* __restrict__ src, int srcWidth, int srcHeight, int srcChannels,const float* __restrict__ convKernel_col, int kernelHeight, uchar* dst, bool fC = true){
-    int mask_radius_h = kernelHeight/2;
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-    int row_o = blockIdx.y * TILE_WIDTH + ty;
-    int col_o = blockIdx.x * TILE_WIDTH + tx;
-    int row_i = row_o - mask_radius_h;
-    int col_i = col_o - mask_radius_h;
-
-    if(fC){
-        if(row_i >= 0 && row_i < srcHeight && col_i >= 0 && col_i < srcWidth) {
-            float sum = 0.0f;
-            float filterCol[] = {1, 2, 1};
-            for (int i = 0; i < MASK_WIDTH; i++) {
-                sum += src[(col_o  + (row_i+i) * srcWidth) * srcChannels + blockIdx.z] * filterCol[i];
-            }
-            dst[(row_o * srcWidth + col_o) * srcChannels + blockIdx.z] = sum;
-        }
-    }else {
-        if (row_i >= 0 && row_i < srcHeight && col_i >= 0 && col_i < srcWidth) {
-            float sum = 0.0f;
-            float filterRow[] = {1, 0, -1};
-            for (int i = 0; i < MASK_WIDTH; i++) {
-                sum += src[(col_i + i + row_o * srcWidth) * srcChannels + blockIdx.z] * filterRow[i];
-            }
-            dst[(row_o * srcWidth + col_o) * srcChannels + blockIdx.z] = sum;
-        }
-    }
-
-}
 int main() {
     if(false){
     cv::Mat src = cv::imread("../images/cat01.jpg", cv::IMREAD_COLOR);
@@ -282,6 +238,9 @@ int main() {
     cv::imshow("ciao", src);
     cv::imwrite("pog.jpg", src);
     cv::waitKey();*/
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, 0);
+    printf("%d.%d\n", deviceProp.major, deviceProp.minor);
     cv::Mat src = cv::imread("../images/cat01.jpg");
     cv::Mat dst = cv::Mat::zeros(src.rows, src.cols, CV_8UC3);
     cv::Mat dst2 = cv::Mat::zeros(src.rows, src.cols, CV_8UC3);
@@ -290,16 +249,20 @@ int main() {
     uchar* d_src;
     uchar* d_dst;
     uchar* d_mid_dst;
-    float convKernel[] = {-1, 0, 1, -2, 0, 2, -1, 0, 1};
- /*   for(int i = 0; i<MASK_HEIGHT*MASK_WIDTH; i++){
-        convKernel[i] /= 16.0f;
+    //float convKernel[] = {-1, 0, 1, -2, 0, 2, -1, 0, 1};
+    float convKernel[MASK_WIDTH*MASK_HEIGHT] ;
+    for(int i = 0; i < MASK_WIDTH*MASK_HEIGHT; i++){
+        convKernel[i] = 1/(float)(MASK_WIDTH*MASK_HEIGHT);
+    }
+    /*for(int i = 0; i<MASK_HEIGHT*MASK_WIDTH; i++){
+        convKernel[i] /= 1003.0f;
     }*/
-    float convKernel_row[] = {-1,0,1};
-    float convKernel_col[] = {1,2,1};
-    /*for(int i= 0; i< MASK_WIDTH; i++){
-        convKernel_col[i] /= 4.0f;
-        convKernel_row[i] /= 4.0f;
-    }*/
+    float convKernel_row[MASK_WIDTH]  /*{-1,0,1}*/;
+    float convKernel_col[MASK_HEIGHT] /*{1,2,1}*/;
+    for(int i= 0; i< MASK_WIDTH; i++){
+        convKernel_col[i] = 1/(float)(MASK_HEIGHT);
+        convKernel_row[i] = 1/(float)(MASK_HEIGHT);
+    }
     for(float f : convKernel){
         std::cout<<f<<std::endl;
     }
@@ -319,43 +282,56 @@ int main() {
     cudaMemcpy(d_convKernel_row, convKernel_row, kernelSize_sep, cudaMemcpyHostToDevice);
     cudaMemcpy(d_convKernel_col, convKernel_col, kernelSize_sep, cudaMemcpyHostToDevice);
     cudaMemcpy(d_src, src.data, srcSize, cudaMemcpyHostToDevice);
-    //cudaMemcpy(d_dst, nullptr, srcSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_mid_dst, src.data, srcSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_dst, nullptr, srcSize, cudaMemcpyHostToDevice);
 
     auto tic = std::chrono::high_resolution_clock::now();
     convolution<<<dimGrid, dimBlock>>>(d_src, src.cols, src.rows, src.channels(), d_convKernel, MASK_WIDTH, MASK_HEIGHT, d_dst);
-    cudaDeviceSynchronize();
+    cudaMemcpy(src.data, d_dst, srcSize, cudaMemcpyDeviceToHost);
     auto toc = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(toc - tic);
-    cudaMemcpy(src.data, d_dst, srcSize, cudaMemcpyDeviceToHost);
     cv::imshow("ciao", src);
-    printf("Classic Conv,Time measured: %.4f seconds.\n", elapsed.count() * 1e-9);
+    printf("Classic Conv,Time measured: %.6f seconds.\n", elapsed.count() * 1e-9);
     cv::waitKey();
     cudaFree(d_dst);
     cudaMalloc((void**)&d_dst, srcSize);
-    //cudaMemcpy(d_dst, nullptr, srcSize, cudaMemcpyHostToDevice);
     cudaMemcpy(src.data, d_dst, srcSize, cudaMemcpyDeviceToHost);
+    cudaMemcpy(d_dst, nullptr, srcSize, cudaMemcpyHostToDevice);
     cv::imshow("Blank", src);
     cv::waitKey();
+    /*
     tic = std::chrono::high_resolution_clock::now();
     sepRowConvolution<<<dimGrid, dimBlock>>>(d_src, src.cols, src.rows, src.channels(), d_convKernel_row, MASK_WIDTH, d_mid_dst);
-    cudaDeviceSynchronize();
     cudaMemcpy(src.data, d_mid_dst, srcSize, cudaMemcpyDeviceToHost);
-cv::imshow("ciao intermedio", src);
-    cv::imwrite("pog_nel_mezzo.png", src);
-cv::waitKey();
-    sepColConvolution<<<dimGrid, dimBlock>>>(d_mid_dst, src.cols, src.rows, src.channels(), d_convKernel_col, MASK_HEIGHT, d_dst);
+    cv::imshow("ciao mid 20", src);
+    cv::imwrite("pog.png", src);
 
-    //prima filtro colonna poi filtro riga
-  /* sepColConvolution2<<<dimGrid, dimBlock>>>(d_src, src.cols, src.rows, src.channels(), d_convKernel_col, MASK_HEIGHT, d_mid_dst, false);
-    cudaDeviceSynchronize();
-    sepColConvolution2<<<dimGrid, dimBlock>>>(d_mid_dst, src.cols, src.rows, src.channels(), d_convKernel_col, MASK_HEIGHT, d_dst, true);
-    */
     toc = std::chrono::high_resolution_clock::now();
     elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(toc - tic);
+    printf("Sep Conv,Time measured: %.6f seconds.\n", elapsed.count() * 1e-9);
+    tic = std::chrono::high_resolution_clock::now();
+    sepColConvolution<<<dimGrid, dimBlock>>>(d_mid_dst, src.cols, src.rows, src.channels(), d_convKernel_col, MASK_HEIGHT, d_dst);
+    //sepConv<<<dimGrid, dimBlock>>>(d_src, src.cols, src.rows, src.channels(), d_convKernel_col, d_convKernel_row, MASK_WIDTH, d_mid_dst, d_dst);
     cudaMemcpy(src.data, d_dst, srcSize, cudaMemcpyDeviceToHost);
+    //prima filtro colonna poi filtro riga
+    toc = std::chrono::high_resolution_clock::now();
+    elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(toc - tic);
+    printf("Sep Conv,Time measured: %.6f seconds.\n", elapsed.count() * 1e-9);
     cv::imshow("ciao ma 20", src);
     cv::imwrite("pog.png", src);
-    printf("Sep Conv,Time measured: %.4f seconds.\n", elapsed.count() * 1e-9);
+    cv::waitKey();*/
+    tic = std::chrono::high_resolution_clock::now();
+    sepRowConvolution<<<dimGrid, dimBlock>>>(d_src, src.cols, src.rows, src.channels(), d_convKernel_row, MASK_WIDTH, d_mid_dst);
+    sepColConvolution<<<dimGrid, dimBlock>>>(d_mid_dst, src.cols, src.rows, src.channels(), d_convKernel_col, MASK_HEIGHT, d_dst);
+    //hello<<<dimGrid, dimBlock>>>(d_src, d_mid_dst, src.cols, d_convKernel_row);
+    //world<<<dimGrid, dimBlock>>>(d_mid_dst, d_dst, src.rows, d_convKernel_col, src.cols);
+    //hello<<<dimGrid, dimBlock>>>(d_src, d_mid_dst, src.cols);
+   // hello<<<dimGrid, dimBlock>>>(d_mid_dst, d_dst, src.cols);
+    cudaMemcpy(src.data, d_dst, srcSize, cudaMemcpyDeviceToHost);
+    toc = std::chrono::high_resolution_clock::now();
+    elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(toc - tic);
+    printf("Sep Conv, Time measured: %.6f seconds.\n", elapsed.count() * 1e-9);
+    cv::imshow("BlankOOOO", src);
     cv::waitKey();
     cudaFree(d_src);
     cudaFree(d_convKernel);
