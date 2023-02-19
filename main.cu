@@ -1,53 +1,16 @@
+#include<omp.h>
 #include <iostream>
 #include "opencv2/opencv.hpp"
-#include "sequentialConvolution.cu"
-#include "parallelConvolution.h"
 #include <opencv2/cudaarithm.hpp>
 #include "chrono"
+#include "sequential.h"
+#include "separableSequential.h"
+#include "parallelOMP.h"
+#include "separableParallelOMP.h"
+#include "definitions.h"
+#include "utils.h"
 
-#define TILE_WIDTH 2
-#define MASK_WIDTH 31
-#define MASK_HEIGHT MASK_WIDTH
-#define BLOCK_WIDTH (TILE_WIDTH + MASK_WIDTH - 1)
-__global__ void hello(const uchar* __restrict__ src, uchar* dst, int srcWidth, const float* __restrict__ kernel) {
 
-    __shared__ uchar Ns[BLOCK_WIDTH * TILE_WIDTH];
-
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-    int row_o = blockIdx.y * TILE_WIDTH + ty;
-    int col_o = blockIdx.x * TILE_WIDTH + tx;
-    int j = 0;
-    int col_i = col_i - MASK_WIDTH/2;
-    int row_i = row_o;
-    float sum = 0.f;
-    if((col_i >= 0) && (col_i < srcWidth)){
-        Ns[tx + ty * BLOCK_WIDTH] = src[(row_i * srcWidth + col_i) * 3 + blockIdx.z];
-    }else{
-        Ns[tx + ty * BLOCK_WIDTH]=0.0f;
-    }
-    if (col_o >= MASK_WIDTH / 2 && col_o < srcWidth - MASK_WIDTH / 2) {
-        for (int i = -MASK_WIDTH / 2; i <= MASK_WIDTH / 2; i++) {
-            sum += src[(row_o * srcWidth + (col_o + i)) * 3 + blockIdx.z] * kernel[MASK_WIDTH/2 + i];
-        }
-        dst[(row_o * srcWidth + col_o) * 3 + blockIdx.z] = sum;
-    }
-}
-__global__ void world(const uchar* __restrict__ src, uchar* dst, int srcHeight, const float* __restrict__ kernel, int srcWidth){
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-    int row_o = blockIdx.y * TILE_WIDTH + ty;
-    int col_o = blockIdx.x * TILE_WIDTH + tx;
-
-    float sum = 0.f;
-    if (row_o >= MASK_WIDTH / 2 && row_o < srcHeight - MASK_WIDTH / 2) {
-        for (int i = -MASK_WIDTH / 2; i <= MASK_WIDTH / 2; i++) {
-            sum += src[((row_o+i) * srcWidth+ col_o) * 3 + blockIdx.z] * kernel[MASK_WIDTH/2 + i];
-        }
-        dst[(row_o * srcWidth + col_o) * 3 + blockIdx.z] = sum;
-    }
-
-}
 __global__ void convolution(const uchar* __restrict__ src, int srcWidth, int srcHeight, int srcChannels,const float* __restrict__ convKernel, int kernelWidth, int kernelHeight, uchar* dst){
 
     __shared__ uchar Ns[BLOCK_WIDTH][BLOCK_WIDTH];
@@ -147,196 +110,100 @@ __global__ void sepColConvolution(const uchar* __restrict__ src, int srcWidth, i
     }
     __syncthreads();
 }
-
 int main() {
-    if(false){
-    cv::Mat src = cv::imread("../images/cat01.jpg", cv::IMREAD_COLOR);
-    cv::Mat dst = cv::Mat::zeros(cv::Size(src.cols, src.rows), CV_8UC3);
-   /* std::vector<double> filter {1, 2, 1,
-                                2, 4, 2,
-                                1, 2, 1};
-    for(double & i : filter)
-        i/=16;*/
-    /*std::vector<double> filter {0, 0, 1, 2, 1, 0, 0,
-                                0, 3, 13,22,13,3,0,
-                                1,13,59,97,59,13,1,
-                                2,22,97,159,97,22,2,
-                                1,13,59,97,59,13,1,
-                                0, 3, 13,22,13,3,0,
-                                0, 0, 1, 2, 1, 0, 0};
-    for(double & i : filter)
-        i/=1003;
-        */
-
-    std::vector<double> filter {1,0,-1,1,0,-1,1,0,-1};
-    applyFilter(&src, &dst, filter);
-    cv::imshow("el gatito", dst);
-    /*cv::Mat dst2;
-    cv::Mat kernel(3,3, CV_32F);
-    float sum = 16.0f;
-    kernel.at<float>(0,0) = 1.0f/sum;
-    kernel.at<float>(0,1) = 2.0f/sum;
-    kernel.at<float>(0,2) = 1.0f/sum;
-    kernel.at<float>(1,0) = 2.0f/sum;
-    kernel.at<float>(1,1) = 4.0f/sum;
-    kernel.at<float>(1,2) = 2.0f/sum;
-    kernel.at<float>(2,0) = 1.0f/sum;
-    kernel.at<float>(2,1) = 2.0f/sum;
-    kernel.at<float>(2,2) = 1.0f/sum;
-    cv::filter2D(src, dst2, -1, kernel);
-    cv::imshow("el gaton", dst2);*/
-    cv::waitKey();}
-    /*
-    cv::cuda::printShortCudaDeviceInfo(cv::cuda::getDevice());
-    int cuda_device_number = cv::cuda::getCudaEnabledDeviceCount();
-    std::cout<<"CUDA DEVICE(S) NUMBER: "<<cuda_device_number<<std::endl;
-    cv::Mat src = cv::imread("../images/cat01.jpg", cv::IMREAD_COLOR);
-    std::cout<<src.cols<<"x"<<src.rows<<std::endl;
-    int count = 0;
-    for(int j = 0; j < src.rows; j++){
-        for(int i = 0; i<src.cols; i++){
-            for(int c = 0; c < src.channels(); c++) {
-                src.data[(j * src.cols + i) * src.channels() + c] =
-                        255 - src.data[(j * src.cols + i) * src.channels() + c];
-            }
-            count++;
-        }
-    }
-    cv::imshow("Ciao", src);
-    printf("%d", count);
-    cv::waitKey();
-     */
-    /*cv::Mat src = cv::imread("../images/cat01.jpg", cv::IMREAD_COLOR);
-    std::cout<<src.cols<<"x"<<src.rows<<"x"<<src.channels()<<std::endl;
-    //uchar dataOnHost[src.cols * src.rows * src.channels()];
-    uchar* dataOnDevice;
-    uchar* dst;
-    const int kernelWidth = 3;
-    const int kernelHeight = 3;
-    double convKernel[kernelWidth * kernelHeight] = {1,0,-1,1,0,-1,1,0,-1};
-    for(int i = 0; i < kernelWidth * kernelHeight; i++){
-        convKernel[i]/= 1.0;
-    }
-    double* d_convKernel;
-    const int kernelSize = kernelHeight * kernelWidth * sizeof(double);
-    const int size = src.cols * src.rows * src.channels() * sizeof(uchar);
-    cudaMalloc((void**)&d_convKernel, kernelSize);
-    cudaMalloc((void**)&dataOnDevice, size);
-    cudaMalloc((void**)&dst, size);
-    cudaMemcpy(d_convKernel, convKernel, kernelSize, cudaMemcpyHostToDevice);
-    cudaMemcpy(dataOnDevice, src.data, size, cudaMemcpyHostToDevice);
-    cudaMemcpy(dst, src.data, size, cudaMemcpyHostToDevice);
-    dim3 dimBlock(16*16*3);
-    dim3 dimGrid(5120);
-    conv<<<512 * 16,256>>>(dataOnDevice,src.cols, src.rows,
-                               src.channels(), d_convKernel, kernelWidth, kernelHeight, dst);
-    cudaDeviceSynchronize();
-    cudaMemcpy(src.data, dst, size, cudaMemcpyDeviceToHost);
-    cudaFree(dataOnDevice);
-    cudaFree(d_convKernel);
-    cudaFree(dst);
-    cv::imshow("ciao", src);
-    cv::imwrite("pog.jpg", src);
-    cv::waitKey();*/
+    //Data structures to save execution times
+    std::vector<double> t_cuda, t_cuda_sep, t_seq, t_seq_sep;
+    std::string imagesName[] = {"cat512.jpg", "cat1024.jpg", "cat2048.jpg", "cat4096.jpg", "cat8192.jpg"};
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, 0);
-    printf("%d.%d\n", deviceProp.major, deviceProp.minor);
-    cv::Mat src = cv::imread("../images/cat01.jpg");
-    cv::Mat dst = cv::Mat::zeros(src.rows, src.cols, CV_8UC3);
-    cv::Mat dst2 = cv::Mat::zeros(src.rows, src.cols, CV_8UC3);
-    dim3 dimBlock (BLOCK_WIDTH, BLOCK_WIDTH);
-    dim3 dimGrid ((src.cols - 1)/TILE_WIDTH +1, (src.rows -1)/TILE_WIDTH+1,src.channels());
-    uchar* d_src;
-    uchar* d_dst;
-    uchar* d_mid_dst;
-    //float convKernel[] = {-1, 0, 1, -2, 0, 2, -1, 0, 1};
-    float convKernel[MASK_WIDTH*MASK_HEIGHT] ;
-    for(int i = 0; i < MASK_WIDTH*MASK_HEIGHT; i++){
-        convKernel[i] = 1/(float)(MASK_WIDTH*MASK_HEIGHT);
+    printf("CC %d.%d\n", deviceProp.major, deviceProp.minor);
+    for(const std::string& imageName : imagesName) {
+        cv::Mat src = cv::imread("../images/"+imageName);
+        cv::Mat dst = cv::Mat::zeros(src.rows, src.cols, CV_8UC3);
+        if(RUN_CUDA){
+        dim3 dimBlock(BLOCK_WIDTH, BLOCK_WIDTH);
+        dim3 dimGrid((src.cols - 1) / TILE_WIDTH + 1, (src.rows - 1) / TILE_WIDTH + 1, src.channels());
+        const int imgSize = src.cols * src.rows * src.channels() * sizeof(uchar);
+        const int kernelSize = MASK_WIDTH * MASK_WIDTH * sizeof(float);
+        const int kernelSizeSep = MASK_WIDTH * sizeof(float);
+        //Defining the filter
+        float filter[MASK_WIDTH * MASK_WIDTH];
+        float filterCol[MASK_WIDTH];
+        float filterRow[MASK_WIDTH];
+        for (int i = 0; i < MASK_WIDTH * MASK_WIDTH; i++)
+            filter[i] = 1 / (float) (MASK_WIDTH * MASK_WIDTH);
+        for (int i = 0; i < MASK_WIDTH; i++){
+            filterCol[i] = 1 / (float) (MASK_WIDTH);
+            filterRow[i] = 1 / (float) (MASK_WIDTH);
+        }
+        //Defining "device" variables
+        uchar* d_src,*d_mid_dst, *d_dst;
+        float* d_filter, *d_filterCol, *d_filterRow;
+        //Allocating memory
+        cudaMalloc((void**) &d_src, imgSize);
+        cudaMalloc((void**) &d_mid_dst, imgSize);
+        cudaMalloc((void**) &d_dst, imgSize);
+        cudaMalloc((void**) &d_filter, kernelSize);
+        cudaMalloc((void**) &d_filterCol, kernelSizeSep);
+        cudaMalloc((void**) &d_filterRow, kernelSizeSep);
+        //Copying data inside device variables
+        cudaMemcpy(d_src, src.data, imgSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(d_filter, filter, kernelSize, cudaMemcpyHostToDevice);
+        cudaMemcpy(d_filterCol, filterCol, kernelSizeSep, cudaMemcpyHostToDevice);
+        cudaMemcpy(d_filterRow, filterRow, kernelSizeSep, cudaMemcpyHostToDevice);
+        //Launching the first convolution
+        auto begin = std::chrono::high_resolution_clock::now();
+        convolution<<<dimGrid, dimBlock>>>(d_src, src.cols, src.rows, src.channels(), d_filter, MASK_WIDTH, MASK_WIDTH, d_dst);
+        cudaMemcpy(dst.data, d_dst, imgSize, cudaMemcpyDeviceToHost);
+        auto end = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+        //Saving the result
+        cv::imwrite("../results/MW"+ std::to_string(MASK_WIDTH)+"/cuda_normal_"+imageName,dst);
+        printf("Normal %.6f sec\n", elapsed.count() * 1e-9);
+        t_cuda.push_back(elapsed.count() * 1e-9);
+        //Launching the second convolution
+        begin = std::chrono::high_resolution_clock::now();
+        sepColConvolution<<<dimGrid, dimBlock>>>(d_src, src.cols, src.rows, src.channels(), d_filterCol, MASK_WIDTH, d_mid_dst);
+        sepRowConvolution<<<dimGrid, dimBlock>>>(d_mid_dst, src.cols, src.rows, src.channels(), d_filterRow, MASK_WIDTH, d_dst);
+        //Copying back data
+        cudaMemcpy(dst.data, d_dst, imgSize, cudaMemcpyDeviceToHost);
+        end = std::chrono::high_resolution_clock::now();
+        elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+        //Saving the result
+        cv::imwrite("../results/MW"+ std::to_string(MASK_WIDTH)+"/cuda_sep_"+imageName,dst);
+        printf("Separable %.6f sec\n", elapsed.count() * 1e-9);
+        t_cuda_sep.push_back(elapsed.count() * 1e-9);
+        //De-allocating memory
+        cudaFree(d_src);
+        cudaFree(d_mid_dst);
+        cudaFree(d_dst);
+        cudaFree(d_filter);
+        cudaFree(d_filterCol);
+        cudaFree(d_filterRow);
+        }
+        if(RUN_SEQ){
+            //Creating the filters
+            std::vector<double> filter, filterCol, filterRow;
+            const int filterElements = MASK_WIDTH * MASK_WIDTH;
+            for(int i = 0; i < filterElements; i++){
+                filter.push_back(1.0/(filterElements));
+            }
+            for(int i = 0; i < MASK_WIDTH; i++){
+                filterCol.push_back(1.0/MASK_WIDTH);
+                filterRow.push_back(1.0/MASK_WIDTH);
+            }
+            //Doing the "normal" convolution and saving the result
+            double t = applyFilter_seq(&src, &dst, filter);
+            t_seq.push_back(t);
+            cv::imwrite("../results/MW"+ std::to_string(MASK_WIDTH)+"/seq_normal_"+imageName,dst);
+            //Doing the separable convolution
+            t = applyFilter_sepSeq(&src, &dst, filterCol, filterRow);
+            t_seq_sep.push_back(t);
+            cv::imwrite("../results/MW"+ std::to_string(MASK_WIDTH)+"/seq_sep_"+imageName,dst);
+        }
     }
-    /*for(int i = 0; i<MASK_HEIGHT*MASK_WIDTH; i++){
-        convKernel[i] /= 1003.0f;
-    }*/
-    float convKernel_row[MASK_WIDTH]  /*{-1,0,1}*/;
-    float convKernel_col[MASK_HEIGHT] /*{1,2,1}*/;
-    for(int i= 0; i< MASK_WIDTH; i++){
-        convKernel_col[i] = 1/(float)(MASK_HEIGHT);
-        convKernel_row[i] = 1/(float)(MASK_HEIGHT);
+    if(RUN_SEQ && RUN_CUDA){
+        save("../results/MW"+std::to_string(MASK_WIDTH)+"/cuda.csv", t_seq, t_cuda, t_seq_sep, t_cuda_sep);
     }
-    for(float f : convKernel){
-        std::cout<<f<<std::endl;
-    }
-    float* d_convKernel;
-    float* d_convKernel_row;
-    float* d_convKernel_col;
-    const int srcSize = src.cols * src.rows * src.channels() * sizeof(uchar);
-    const int kernelSize = MASK_WIDTH * MASK_HEIGHT * sizeof(float);
-    const int kernelSize_sep = MASK_WIDTH * sizeof(float);
-    cudaMalloc((void**)&d_convKernel, kernelSize);
-    cudaMalloc((void**)&d_convKernel_row, kernelSize_sep);
-    cudaMalloc((void**)&d_convKernel_col, kernelSize_sep);
-    cudaMalloc((void**)&d_src, srcSize);
-    cudaMalloc((void**)&d_dst, srcSize);
-    cudaMalloc((void**)&d_mid_dst, srcSize);
-    cudaMemcpy(d_convKernel, convKernel, kernelSize, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_convKernel_row, convKernel_row, kernelSize_sep, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_convKernel_col, convKernel_col, kernelSize_sep, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_src, src.data, srcSize, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_mid_dst, src.data, srcSize, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_dst, nullptr, srcSize, cudaMemcpyHostToDevice);
-
-    auto tic = std::chrono::high_resolution_clock::now();
-    convolution<<<dimGrid, dimBlock>>>(d_src, src.cols, src.rows, src.channels(), d_convKernel, MASK_WIDTH, MASK_HEIGHT, d_dst);
-    cudaMemcpy(src.data, d_dst, srcSize, cudaMemcpyDeviceToHost);
-    auto toc = std::chrono::high_resolution_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(toc - tic);
-    cv::imshow("ciao", src);
-    printf("Classic Conv,Time measured: %.6f seconds.\n", elapsed.count() * 1e-9);
-    cv::waitKey();
-    cudaFree(d_dst);
-    cudaMalloc((void**)&d_dst, srcSize);
-    cudaMemcpy(src.data, d_dst, srcSize, cudaMemcpyDeviceToHost);
-    cudaMemcpy(d_dst, nullptr, srcSize, cudaMemcpyHostToDevice);
-    cv::imshow("Blank", src);
-    cv::waitKey();
-    /*
-    tic = std::chrono::high_resolution_clock::now();
-    sepRowConvolution<<<dimGrid, dimBlock>>>(d_src, src.cols, src.rows, src.channels(), d_convKernel_row, MASK_WIDTH, d_mid_dst);
-    cudaMemcpy(src.data, d_mid_dst, srcSize, cudaMemcpyDeviceToHost);
-    cv::imshow("ciao mid 20", src);
-    cv::imwrite("pog.png", src);
-
-    toc = std::chrono::high_resolution_clock::now();
-    elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(toc - tic);
-    printf("Sep Conv,Time measured: %.6f seconds.\n", elapsed.count() * 1e-9);
-    tic = std::chrono::high_resolution_clock::now();
-    sepColConvolution<<<dimGrid, dimBlock>>>(d_mid_dst, src.cols, src.rows, src.channels(), d_convKernel_col, MASK_HEIGHT, d_dst);
-    //sepConv<<<dimGrid, dimBlock>>>(d_src, src.cols, src.rows, src.channels(), d_convKernel_col, d_convKernel_row, MASK_WIDTH, d_mid_dst, d_dst);
-    cudaMemcpy(src.data, d_dst, srcSize, cudaMemcpyDeviceToHost);
-    //prima filtro colonna poi filtro riga
-    toc = std::chrono::high_resolution_clock::now();
-    elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(toc - tic);
-    printf("Sep Conv,Time measured: %.6f seconds.\n", elapsed.count() * 1e-9);
-    cv::imshow("ciao ma 20", src);
-    cv::imwrite("pog.png", src);
-    cv::waitKey();*/
-    tic = std::chrono::high_resolution_clock::now();
-    sepRowConvolution<<<dimGrid, dimBlock>>>(d_src, src.cols, src.rows, src.channels(), d_convKernel_row, MASK_WIDTH, d_mid_dst);
-    sepColConvolution<<<dimGrid, dimBlock>>>(d_mid_dst, src.cols, src.rows, src.channels(), d_convKernel_col, MASK_HEIGHT, d_dst);
-    //hello<<<dimGrid, dimBlock>>>(d_src, d_mid_dst, src.cols, d_convKernel_row);
-    //world<<<dimGrid, dimBlock>>>(d_mid_dst, d_dst, src.rows, d_convKernel_col, src.cols);
-    //hello<<<dimGrid, dimBlock>>>(d_src, d_mid_dst, src.cols);
-   // hello<<<dimGrid, dimBlock>>>(d_mid_dst, d_dst, src.cols);
-    cudaMemcpy(src.data, d_dst, srcSize, cudaMemcpyDeviceToHost);
-    toc = std::chrono::high_resolution_clock::now();
-    elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(toc - tic);
-    printf("Sep Conv, Time measured: %.6f seconds.\n", elapsed.count() * 1e-9);
-    cv::imshow("BlankOOOO", src);
-    cv::waitKey();
-    cudaFree(d_src);
-    cudaFree(d_convKernel);
-    cudaFree(d_convKernel_row);
-    cudaFree(d_convKernel_col);
-    cudaFree(d_dst);
     return 0;
 }
