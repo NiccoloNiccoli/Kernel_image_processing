@@ -60,7 +60,7 @@ __global__ void sepRowConvolution(const uchar* __restrict__ src, int srcWidth, i
     float output = 0.0f;
     if(ty < TILE_WIDTH && tx < TILE_WIDTH){
             for(int j = 0; j < kernelWidth; j++){
-                output += convKernel_row[j] * (float)Ns[j + tx + ty * BLOCK_WIDTH]; //fixme 11-02 kernelWidth e MASK_WIDTH sono la stessa cosa
+                output += convKernel_row[j] * (float)Ns[j + tx + ty * BLOCK_WIDTH];
             }
 
         if(row_o < srcHeight && col_o < srcWidth){
@@ -88,7 +88,7 @@ __global__ void sepColConvolution(const uchar* __restrict__ src, int srcWidth, i
     float output = 0.0f;
     if(ty < TILE_WIDTH && tx < TILE_WIDTH){
         for(int i = 0; i < kernelHeight; i++){
-                output += convKernel_col[i] * (float)Ns[tx + (ty+i) * BLOCK_WIDTH]; //fixme 11-02 kernelWidth e MASK_WIDTH sono la stessa cosa
+                output += convKernel_col[i] * (float)Ns[tx + (ty+i) * BLOCK_WIDTH];
         }
 
         if(row_o < srcHeight && col_o < srcWidth){
