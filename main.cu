@@ -1,12 +1,9 @@
-#include<omp.h>
 #include <iostream>
 #include "opencv2/opencv.hpp"
 #include <opencv2/cudaarithm.hpp>
 #include "chrono"
 #include "sequential.h"
 #include "separableSequential.h"
-#include "parallelOMP.h"
-#include "separableParallelOMP.h"
 #include "definitions.h"
 #include "utils.h"
 
@@ -14,7 +11,6 @@
 __global__ void convolution(const uchar* __restrict__ src, int srcWidth, int srcHeight, int srcChannels,const float* __restrict__ convKernel, int kernelWidth, int kernelHeight, uchar* dst){
 
     __shared__ uchar Ns[BLOCK_WIDTH][BLOCK_WIDTH];
-    // printf("%d", srcChannels);
     int mask_radius_w = kernelWidth/2;
     int mask_radius_h = kernelHeight/2;
     int tx = threadIdx.x;
@@ -32,19 +28,13 @@ __global__ void convolution(const uchar* __restrict__ src, int srcWidth, int src
     __syncthreads();
     float output = 0.0f;
     if(ty < TILE_WIDTH && tx < TILE_WIDTH){
-        // printf("Con %d siamo dentro...\n", threadIdx.x);
         for(int i = 0; i < kernelHeight; i++){
             for(int j = 0; j < kernelWidth; j++){
-                // printf("dentro, %f\n", (float)Ns[i+ty][j+tx]);
-                //printf("%f %d", convKernel[i * kernelWidth +j], Ns[i+ty][j+tx]);
-                output += convKernel[i * kernelWidth + j] * (float)Ns[i+ty][j+tx]; //fixme 11-02 kernelWidth e MASK_WIDTH sono la stessa cosa
-                //printf("%f", output);
+                output += convKernel[i * kernelWidth + j] * (float)Ns[i+ty][j+tx];
             }
         }
-        //printf("Con %d siamo fuori...\n", threadIdx.x);
 
         if(row_o < srcHeight && col_o < srcWidth){
-            //printf("%d sta aggiornando dst...\n", threadIdx.x);
             dst[(row_o * srcWidth + col_o) * srcChannels + blockIdx.z] = static_cast<uchar>(output);
         }
     }
@@ -54,7 +44,6 @@ __global__ void convolution(const uchar* __restrict__ src, int srcWidth, int src
 __global__ void sepRowConvolution(const uchar* __restrict__ src, int srcWidth, int srcHeight, int srcChannels,const float* __restrict__ convKernel_row, int kernelWidth, uchar* dst){
 
     __shared__ uchar Ns[BLOCK_WIDTH * BLOCK_WIDTH];
-    //printf("%d + ", srcChannels);
     int tx = threadIdx.x;
     int ty = threadIdx.y;
     int row_o = blockIdx.y * TILE_WIDTH + ty;
@@ -67,7 +56,6 @@ __global__ void sepRowConvolution(const uchar* __restrict__ src, int srcWidth, i
     }else{
         Ns[tx + ty * BLOCK_WIDTH]=0.0f;
     }
-    //printf("XxX ");
     __syncthreads();
     float output = 0.0f;
     if(ty < TILE_WIDTH && tx < TILE_WIDTH){
@@ -83,7 +71,6 @@ __global__ void sepRowConvolution(const uchar* __restrict__ src, int srcWidth, i
 __global__ void sepColConvolution(const uchar* __restrict__ src, int srcWidth, int srcHeight, int srcChannels,const float* __restrict__ convKernel_col, int kernelHeight, uchar* dst){
 
     __shared__ uchar Ns[BLOCK_WIDTH * BLOCK_WIDTH];
-    // printf("%d", srcChannels);
     int mask_radius_h = kernelHeight/2;
     int tx = threadIdx.x;
     int ty = threadIdx.y;
