@@ -17,9 +17,9 @@ double applyFilter_sepSeq(cv::Mat* src, cv::Mat* dst, std::vector<double> kernel
                 for(int i = 0; i < kernelSize; i++){
                     if(y + i >= offset && y + i < src->rows + offset){
                         convolutedValue += src->data[(y + i - offset) * src->step + (x) * src->channels() + channel] * kernel_col[i];
-                    }else{
+                    }/*else{
                         convolutedValue += src->data[y * src->step + (x) * src->channels() + channel] * kernel_col[i];
-                    }
+                    }*/
                 }
                 intermediate.data[y * intermediate.step + x * intermediate.channels() + channel] = static_cast<uchar>(convolutedValue);
             }
@@ -31,14 +31,14 @@ double applyFilter_sepSeq(cv::Mat* src, cv::Mat* dst, std::vector<double> kernel
             for(int channel = 0; channel < dst->channels(); channel++) {
                 double convolutedValue = 0;
                 for(int j = 0; j < kernelSize; j++) {
-                    if (x + j >= offset && x + j < dst->step + offset) {
+                    if (x + j >= offset && x + j < dst->cols + offset) {
                         convolutedValue +=
                                 intermediate.data[(y) * dst->step + (x + j - offset) * dst->channels() +
                                                   channel] * kernel_row[j];
-                    }else{
+                    }/*else{
                         convolutedValue+=intermediate.data[(y) * dst->step + (x) * dst->channels() +
                                                            channel] * kernel_row[j];
-                    }
+                    }*/
                 }
                 dst->data[y * dst->step + x * dst->channels() + channel] = static_cast<uchar>(convolutedValue);
             }

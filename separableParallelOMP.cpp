@@ -15,10 +15,10 @@ void applyColumnFilter(cv::Mat* src, cv::Mat* intermediate, std::vector<double> 
                     if (y + i >= offset && y + i < src->rows + offset) {
                         convolutedValue += src->data[(y + i - offset) * src->step + (x) * src->channels() + channel] *
                                            kernel_col[i];
-                    }else{
+                    }/*else{
                         convolutedValue += src->data[(y) * src->step + (x) * src->channels() + channel] *
                                            kernel_col[i];
-                    }
+                    }*/
                 }
                 intermediate->data[y * intermediate->step + x * intermediate->channels() + channel] = static_cast<uchar>(convolutedValue);
             }
@@ -38,10 +38,10 @@ void applyRowFilter(cv::Mat* intermediate, cv::Mat* dst, std::vector<double> ker
                         convolutedValue +=
                                 intermediate->data[(y) * dst->step + (x + j - offset) * dst->channels() +
                                                    channel] * kernel_row[j];
-                    }else{
+                    }/*else{
                         convolutedValue += intermediate->data[(y) * dst->step + (x) * dst->channels() +
                                                               channel] * kernel_row[j];
-                    }
+                    }*/
                 }
                 dst->data[y * dst->step + x * dst->channels() + channel] = static_cast<uchar>(convolutedValue);
             }
@@ -60,14 +60,12 @@ double applyFilter_sepPar(int numProcs, cv::Mat* src, cv::Mat* dst, std::vector<
     for (int threadIdx = 0; threadIdx < numProcs; threadIdx++) {
         applyColumnFilter(src, &intermediate, kernel_col, kernelSize, offset, tileHeight * threadIdx, tileHeight * (threadIdx + 1));
     }
-#pragma omp barrier
 #pragma omp for
     for (int threadIdx = 0; threadIdx < numProcs; threadIdx++) {
         applyRowFilter(&intermediate, dst, kernel_row, kernelSize, offset, tileHeight * threadIdx, tileHeight * (threadIdx + 1));
     }
-#pragma omp barrier
     auto end = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
-    printf("Par Sep Time measured: %.4f seconds.\n", elapsed.count() * 1e-9);
+    printf("Par %d Time measured: %.4f seconds.\n",numProcs, elapsed.count() * 1e-9);
     return elapsed.count() * 1e-9;
 };

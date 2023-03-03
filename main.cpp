@@ -18,7 +18,7 @@ int main() {
 #endif
     std::vector<double> t_seq, t_seq_sep, t_omp, t_omp_sep;
     std::string imagesName[] = {"cat512.jpg", "cat1024.jpg", "cat2048.jpg", "cat4096.jpg", "cat8192.jpg"};
-    const int nProc = 8;
+    int nProcs[] = {2, 4, 8, 16, 32};
     for(const std::string& imageName : imagesName){
         cv::Mat src = cv::imread("../images/"+imageName);
         cv::Mat dst = cv::Mat::zeros(src.rows, src.cols, CV_8UC3);
@@ -32,15 +32,17 @@ int main() {
             filterCol.push_back(1.0/MASK_WIDTH);
             filterRow.push_back(1.0/MASK_WIDTH);
         }
-        if(RUN_OMP){
-            //Doing the "normal" convolution and saving the result
-            double t = applyFilter_parOMP(nProc,&src, &dst,filter);
-            t_omp.push_back(t);
-            cv::imwrite("../results/MW"+ std::to_string(MASK_WIDTH)+"/omp_normal_"+imageName,dst);
-            //Doing the separable convolution
-            t = applyFilter_sepPar(nProc,&src, &dst,filterCol, filterRow);
-            t_omp_sep.push_back(t);
-            cv::imwrite("../results/MW"+ std::to_string(MASK_WIDTH)+"/omp_sep_"+imageName,dst);
+        if(RUN_OMP) {
+            for (int nProc: nProcs) {
+                //Doing the "normal" convolution and saving the result
+                double t = applyFilter_parOMP(nProc, &src, &dst, filter);
+                t_omp.push_back(t);
+                cv::imwrite("../results/MW" + std::to_string(MASK_WIDTH) + "/omp_normal_" + imageName, dst);
+                //Doing the separable convolution
+                t = applyFilter_sepPar(nProc, &src, &dst, filterCol, filterRow);
+                t_omp_sep.push_back(t);
+                cv::imwrite("../results/MW" + std::to_string(MASK_WIDTH) + "/omp_sep_" + imageName, dst);
+            }
         }
         if(RUN_SEQ){
             //Doing the "normal" convolution and saving the result
@@ -54,7 +56,7 @@ int main() {
         }
     }
     if(RUN_SEQ && RUN_OMP){
-        save("../results/MW"+std::to_string(MASK_WIDTH)+"/omp.csv", t_seq, t_omp, t_seq_sep, t_omp_sep);
+        save("../results/MW" + std::to_string(MASK_WIDTH) + "/omp.csv", t_seq, t_omp, t_seq_sep, t_omp_sep, nProcs);
     }
     return 0;
 }

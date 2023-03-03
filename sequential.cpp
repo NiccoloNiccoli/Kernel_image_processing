@@ -30,10 +30,10 @@ double applyFilter_seq(cv::Mat* src, cv::Mat* dst, std::vector<double> kernel){
                             if(x + j >= offset && x + j < src->cols + offset && y + i >= offset && y + i < src->rows + offset) {
                                 convolutedValue +=src->data[(y + i - offset) * src->step + (x + j - offset) * src->channels() +
                                                             channel] * kernel[i * kernelSize + j];
-                            }else{
+                            }/*else{
                                 convolutedValue+=src->data[(y) * src->step + (x) * src->channels() +
                                                            channel] * kernel[i * kernelSize + j];
-                            }
+                            }*/
                         }
                     }
                 dst->data[y * dst->step + x * dst->channels() + channel] = static_cast<uchar>(convolutedValue);

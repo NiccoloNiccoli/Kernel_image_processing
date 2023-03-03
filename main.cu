@@ -104,6 +104,7 @@ int main() {
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, 0);
     printf("CC %d.%d\n", deviceProp.major, deviceProp.minor);
+    printf("%s", deviceProp.name);
     for(const std::string& imageName : imagesName) {
         cv::Mat src = cv::imread("../images/"+imageName);
         cv::Mat dst = cv::Mat::zeros(src.rows, src.cols, CV_8UC3);
@@ -144,10 +145,10 @@ int main() {
         cudaMemcpy(dst.data, d_dst, imgSize, cudaMemcpyDeviceToHost);
         auto end = std::chrono::high_resolution_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+        t_cuda.push_back(elapsed.count() * 1e-9);
         //Saving the result
         cv::imwrite("../results/MW"+ std::to_string(MASK_WIDTH)+"/cuda_normal_"+imageName,dst);
         printf("Normal %.6f sec\n", elapsed.count() * 1e-9);
-        t_cuda.push_back(elapsed.count() * 1e-9);
         //Launching the second convolution
         begin = std::chrono::high_resolution_clock::now();
         sepColConvolution<<<dimGrid, dimBlock>>>(d_src, src.cols, src.rows, src.channels(), d_filterCol, MASK_WIDTH, d_mid_dst);
@@ -156,10 +157,10 @@ int main() {
         cudaMemcpy(dst.data, d_dst, imgSize, cudaMemcpyDeviceToHost);
         end = std::chrono::high_resolution_clock::now();
         elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+        t_cuda_sep.push_back(elapsed.count() * 1e-9);
         //Saving the result
         cv::imwrite("../results/MW"+ std::to_string(MASK_WIDTH)+"/cuda_sep_"+imageName,dst);
         printf("Separable %.6f sec\n", elapsed.count() * 1e-9);
-        t_cuda_sep.push_back(elapsed.count() * 1e-9);
         //De-allocating memory
         cudaFree(d_src);
         cudaFree(d_mid_dst);
@@ -190,7 +191,7 @@ int main() {
         }
     }
     if(RUN_SEQ && RUN_CUDA){
-        save("../results/MW"+std::to_string(MASK_WIDTH)+"/cuda.csv", t_seq, t_cuda, t_seq_sep, t_cuda_sep);
+        save("../results/MW" + std::to_string(MASK_WIDTH) + "/cuda.csv", t_seq, t_cuda, t_seq_sep, t_cuda_sep);
     }
     return 0;
 }

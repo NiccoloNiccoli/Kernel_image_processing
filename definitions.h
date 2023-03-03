@@ -8,7 +8,7 @@
 #define TILE_WIDTH 16
 #define MASK_WIDTH 15
 #define BLOCK_WIDTH (TILE_WIDTH + MASK_WIDTH - 1)
-#define RUN_CUDA 1
+#define RUN_CUDA 0
 #define RUN_OMP 1
 #define RUN_SEQ 1
 

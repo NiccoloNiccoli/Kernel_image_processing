@@ -15,9 +15,9 @@ void filter(cv::Mat* src, cv::Mat* dst, std::vector<double> kernel, int kernelSi
                     for(int j = 0; j<kernelSize; j++){
                         if(x + j >= offset && x + j < src->cols + offset && y + i >= offset && y + i < src->rows + offset){
                             convolutedValue += src->data[(y+i - offset) * src->step + (x+j - offset) * src->channels() + channel] * kernel[i*kernelSize + j];
-                        }else{
+                        }/*else{
                             convolutedValue += src->data[(y) * src->step + (x) * src->channels() + channel] * kernel[i*kernelSize + j];
-                        }
+                        }*/
                     }
                 }
                 dst->data[y * dst->step + x * dst->channels() + channel] = static_cast<uchar>(convolutedValue);
@@ -38,10 +38,9 @@ double applyFilter_parOMP(int numProcs, cv::Mat* src, cv::Mat* dst, const std::v
         filter(src, dst, kernel, kernelSize, offset, tileHeight * threadIdx, tileHeight * (threadIdx + 1));
 
     }
-#pragma omp barrier
     auto end = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
-    printf("Par Time measured: %.4f seconds.\n", elapsed.count() * 1e-9);
+    printf("Par %d Time measured: %.4f seconds.\n",numProcs, elapsed.count() * 1e-9);
     return elapsed.count() * 1e-9;
 };
 

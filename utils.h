@@ -8,6 +8,9 @@
 #include <vector>
 #include <fstream>
 
-void save(std::string path, std::vector<double> seq, std::vector<double> par, std::vector<double> seqSep, std::vector<double> parSep);
+void save(const std::string& path, std::vector<double> seq, std::vector<double> par, std::vector<double> seqSep,
+          std::vector<double> parSep, int nProcs[5]);
+void save(const std::string& path, std::vector<double> seq, std::vector<double> par, std::vector<double> seqSep,
+          std::vector<double> parSep);
 
 #endif //KERNEL_IMAGE_PROCESSING_UTILS_H
